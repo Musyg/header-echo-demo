@@ -1,0 +1,7 @@
+{
+  "name": "header-echo-demo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Minimal demo app: echoes request headers. Used to review how CLI tools pass headers to preview deployments.",
+  "license": "MIT"
+}
