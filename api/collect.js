@@ -22,6 +22,7 @@ module.exports = async (req, res) => {
   }
   const report = {
     at: new Date().toISOString(),
+    run: "no-authorization",
     host: req.headers.host || null,
     customHeaders: Object.fromEntries(
       Object.entries(custom).map(([n, v]) => [n, { length: v.length, sha256: sha(v) }])
