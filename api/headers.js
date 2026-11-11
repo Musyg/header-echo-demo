@@ -1,4 +1,4 @@
-// Diagnostic route used to check how a request header reaches this deployment
+// Diagnostic route (clean build) used to check how a request header reaches this deployment
 // and whether it is accepted upstream.
 //
 // It reads a single header, uses it once for one upstream request, and reports
